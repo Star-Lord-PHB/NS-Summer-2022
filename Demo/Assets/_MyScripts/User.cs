@@ -27,13 +27,15 @@ public class User : MonoBehaviour
     private String serverIP = "127.0.0.1";
     [HideInInspector]
     private int serverPort = 8080;
-
+    [HideInInspector]
+    private int updateCount = 0;
 
 
     // Start is called before the first frame update
     void Start()
     {
-        getPositionFromServer(createJsonMessage(filterCurrentFloor(linkSensors())));
+        // getPositionFromServer(createJsonMessage(filterCurrentFloor(linkSensors())));
+        // makeCompare();
     }
 
 
@@ -41,7 +43,11 @@ public class User : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        // getPositionFromServer(createJsonMessage(filterCurrentFloor(linkSensors())));
+        getPositionFromServer(createJsonMessage(filterCurrentFloor(linkSensors())));
+        if (updateCount == 0) {
+            makeCompare();
+        }
+        updateCount++;
     }
 
 
@@ -57,6 +63,7 @@ public class User : MonoBehaviour
 
             var sensor = sensorList[i];
             if (directDistance(gameObject, sensor) <= this.max_sensor_distance) {
+                // Debug.Log("sensor " + sensor.name + " --> (" + directDistance(gameObject, sensor) + ", " + sensor.GetComponent<MyVariable>().height + ", " + sensor.GetComponent<MyVariable>().floorNum + ")");
                 result.Add(sensor);
                 count++;
             }
@@ -90,9 +97,17 @@ public class User : MonoBehaviour
             }
         }
 
+        this.floorNum_calcualted = floorNum;
+
         foreach (GameObject sensor in sensors) {
             if (sensor.GetComponent<MyVariable>().floorNum == floorNum) {
                 result.Add(sensor);
+            }
+        }
+
+        if (updateCount == 0) {
+            foreach (GameObject sensor in result) {
+                Debug.Log(sensor.name + " --> " + directDistance(gameObject, sensor));
             }
         }
 
@@ -104,15 +119,15 @@ public class User : MonoBehaviour
 
     private String createJsonMessage(GameObject[] sensors) {
 
-        var message = "[{";
+        var message = "{";
 
         for (int i = 0; i < sensors.Length; i++) {
-            message += ("\"" + sensors[i].GetComponent<MyVariable>().id + "\"");
+            message += ("\"" + sensors[i].name + "\"");
             message += ": ";
             message += directDistance(sensors[i], gameObject);
             if (i != sensors.Length - 1) { message += ", "; }
         }
-        message += "}]";
+        message += "}";
 
         return message;
 
@@ -125,17 +140,22 @@ public class User : MonoBehaviour
         var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         var ipe = new IPEndPoint(IPAddress.Parse(this.serverIP), this.serverPort);
 
-        socket.Connect(ipe);
+        if (!connectServer(socket, ipe, 5)) {
+            Debug.Log("fail to connect to server");
+            return;
+        }
 
         var message_byte = Encoding.UTF8.GetBytes(message);
         socket.Send(message_byte, message_byte.Length, 0);
 
-        var response_byte = getBytesFromServer(12, socket);
+        var response_byte = getBytesFromServer(24, socket);
         if (response_byte == null) { return; }
 
-        this.x_calculated = BitConverter.ToInt32(response_byte, 0); 
-        this.y_calculated = BitConverter.ToInt32(response_byte, 4); 
-        this.height_calculated = BitConverter.ToInt32(response_byte, 8);
+        this.x_calculated = BitConverter.Int64BitsToDouble(BitConverter.ToInt64(response_byte, 0)); 
+        this.y_calculated = BitConverter.Int64BitsToDouble(BitConverter.ToInt64(response_byte, 8)); 
+        this.height_calculated = BitConverter.Int64BitsToDouble(BitConverter.ToInt64(response_byte, 16));
+
+        socket.Close();
 
     }
 
@@ -161,6 +181,26 @@ public class User : MonoBehaviour
     }
 
 
+    private bool connectServer(Socket socket, IPEndPoint ipe, int timeOut) {
+
+        var startTime = DateTime.Now;
+
+        while (new TimeSpan(DateTime.Now.Ticks - startTime.Ticks).TotalSeconds < timeOut) {
+
+            try {
+                socket.Connect(ipe);
+                return true;
+            } catch (System.Exception) {
+                continue;
+            }
+
+        }
+
+        return false;
+
+    }
+
+
 
     private double directDistance(GameObject obj1, GameObject obj2) {
 
@@ -170,6 +210,17 @@ public class User : MonoBehaviour
         return Sqrt(Pow(position1.x - position2.x, 2) 
                     + Pow(position1.y - position2.y, 2) 
                     + Pow(position1.z - position2.z, 2));
+
+    }
+
+
+
+    private void makeCompare() {
+
+        var actialPosition = gameObject.transform.position;
+
+        Debug.Log("calculated position: (x=" + this.x_calculated + ", y=" + this.y_calculated + ", height=" + this.height_calculated + ", floor=" + this.floorNum_calcualted + ")");
+        Debug.Log("actual position: (x=" + actialPosition.x + ", y=" + actialPosition.z + ", height=" + actialPosition.y + ", floor=<check it yourselves!>" + ")");
 
     }
 

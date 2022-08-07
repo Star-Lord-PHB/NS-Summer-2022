@@ -18,6 +18,7 @@ public class MyVariable : MonoBehaviour
         this.x = gameObject.transform.position.x; 
         this.y = gameObject.transform.position.z;
         this.height = gameObject.transform.position.y;
+        this.floorNum = this.height <= 7.5 ? 1 : 2;
     }
 
     // Update is called once per frame

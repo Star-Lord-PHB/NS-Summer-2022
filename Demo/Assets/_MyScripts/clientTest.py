@@ -1,4 +1,5 @@
-import socket 
+import socket
+from server import floatToBytes 
 
 client = socket.socket()
 

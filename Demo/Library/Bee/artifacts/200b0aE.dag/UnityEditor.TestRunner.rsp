@@ -327,7 +327,7 @@
 -r:"/Applications/Unity/Hub/Editor/2021.3.7f1c1/Unity.app/Contents/UnityReferenceAssemblies/unity-4.8-api/System.Transactions.dll"
 -r:"/Applications/Unity/Hub/Editor/2021.3.7f1c1/Unity.app/Contents/UnityReferenceAssemblies/unity-4.8-api/System.Xml.dll"
 -r:"/Applications/Unity/Hub/Editor/2021.3.7f1c1/Unity.app/Contents/UnityReferenceAssemblies/unity-4.8-api/System.Xml.Linq.dll"
--r:"/Users/penghaobo/SynologyDrive/Project/Develop/AR/Unity/Sample/My project (1)/Library/PackageCache/com.unity.ext.nunit@1.0.6/net35/unity-custom/nunit.framework.dll"
+-r:"/Users/penghaobo/SynologyDrive/Project/Develop/AR/project/NS-Summer-2022/Demo/Library/PackageCache/com.unity.ext.nunit@1.0.6/net35/unity-custom/nunit.framework.dll"
 -r:"Library/Bee/artifacts/200b0aE.dag/UnityEngine.TestRunner.ref.dll"
 "Library/PackageCache/com.unity.test-framework@1.1.31/UnityEditor.TestRunner/Api/Analytics/AnalyticsReporter.cs"
 "Library/PackageCache/com.unity.test-framework@1.1.31/UnityEditor.TestRunner/Api/Analytics/AnalyticsTestCallback.cs"
