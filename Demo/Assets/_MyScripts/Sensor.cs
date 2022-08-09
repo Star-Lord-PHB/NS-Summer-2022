@@ -3,7 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class MyVariable : MonoBehaviour
+public class Sensor : MonoBehaviour
 {
     public int floorNum = 1;
     public String id;

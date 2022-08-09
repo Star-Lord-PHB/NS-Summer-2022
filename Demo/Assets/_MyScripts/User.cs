@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using static System.Math;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -34,8 +33,22 @@ public class User : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        // getPositionFromServer(createJsonMessage(filterCurrentFloor(linkSensors())));
-        // makeCompare();
+        var socket = Utils.connectToServer(this.serverIP, this.serverPort);
+        if (socket == null) {
+            Debug.Log("Fail to connect to server!");
+            return;
+        }
+
+        var testMark = GameObject.Find("/LandMarks/mark_Entry_3").transform.position;
+
+        if (!sendNavigationRequest(socket, testMark.x, testMark.z, testMark.y)) {
+            Debug.Log("Fail to send navigation request to server!");
+            return;
+        }
+
+        getPathFromServer(socket, createJsonMessage(filterCurrentFloor(linkSensors())));
+
+        socket.Close();
     }
 
 
@@ -43,11 +56,30 @@ public class User : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        getPositionFromServer(createJsonMessage(filterCurrentFloor(linkSensors())));
-        if (updateCount == 0) {
-            makeCompare();
-        }
-        updateCount++;
+        // var socket = Utils.connectToServer(this.serverIP, this.serverPort);
+        // if (socket == null) {
+        //     Debug.Log("Fail to connect to server!");
+        //     return;
+        // }
+
+        // var testMark = GameObject.Find("/LandMarks/mark_Kitchen_3").transform.position;
+
+        // if (!sendNavigationRequest(socket, testMark.x, testMark.z, testMark.y)) {
+        //     Debug.Log("Fail to send navigation request to server!");
+        //     return;
+        // }
+
+        // getPathFromServer(socket, createJsonMessage(filterCurrentFloor(linkSensors())));
+
+        // socket.Close();
+    }
+
+
+
+    private bool sendNavigationRequest(Socket socket, double x, double y, double height) {
+        var message_byte = Encoding.UTF8.GetBytes("{\"x\": " + x + ", \"y\": " + y + ", \"height\": " + height + "}");
+        socket.Send(message_byte, message_byte.Length, 0);
+        return Utils.acknowledge(socket);
     }
 
 
@@ -62,8 +94,8 @@ public class User : MonoBehaviour
         for (int i = 0; i < sensorList.Length; i++) {
 
             var sensor = sensorList[i];
-            if (directDistance(gameObject, sensor) <= this.max_sensor_distance) {
-                // Debug.Log("sensor " + sensor.name + " --> (" + directDistance(gameObject, sensor) + ", " + sensor.GetComponent<MyVariable>().height + ", " + sensor.GetComponent<MyVariable>().floorNum + ")");
+            if (Utils.directDistance(gameObject, sensor) <= this.max_sensor_distance) {
+                // Debug.Log("sensor " + sensor.name + " --> (" + Utils.directDistance(gameObject, sensor) + ", " + sensor.GetComponent<Sensor>().height + ", " + sensor.GetComponent<Sensor>().floorNum + ")");
                 result.Add(sensor);
                 count++;
             }
@@ -84,8 +116,8 @@ public class User : MonoBehaviour
         var result = new List<GameObject>();
 
         foreach (GameObject sensor in sensors) {
-            counter.TryAdd(sensor.GetComponent<MyVariable>().floorNum, 0);
-            counter[sensor.GetComponent<MyVariable>().floorNum] += 1;
+            counter.TryAdd(sensor.GetComponent<Sensor>().floorNum, 0);
+            counter[sensor.GetComponent<Sensor>().floorNum] += 1;
         }
 
         var floorNum = 1;
@@ -100,16 +132,16 @@ public class User : MonoBehaviour
         this.floorNum_calcualted = floorNum;
 
         foreach (GameObject sensor in sensors) {
-            if (sensor.GetComponent<MyVariable>().floorNum == floorNum) {
+            if (sensor.GetComponent<Sensor>().floorNum == floorNum) {
                 result.Add(sensor);
             }
         }
 
-        if (updateCount == 0) {
-            foreach (GameObject sensor in result) {
-                Debug.Log(sensor.name + " --> " + directDistance(gameObject, sensor));
-            }
-        }
+        // if (updateCount == 0) {
+        //     foreach (GameObject sensor in result) {
+        //         Debug.Log(sensor.name + " --> " + Utils.directDistance(gameObject, sensor));
+        //     }
+        // }
 
         return result.ToArray();
 
@@ -124,7 +156,7 @@ public class User : MonoBehaviour
         for (int i = 0; i < sensors.Length; i++) {
             message += ("\"" + sensors[i].name + "\"");
             message += ": ";
-            message += directDistance(sensors[i], gameObject);
+            message += Utils.directDistance(sensors[i], gameObject);
             if (i != sensors.Length - 1) { message += ", "; }
         }
         message += "}";
@@ -135,81 +167,74 @@ public class User : MonoBehaviour
 
 
 
-    private void getPositionFromServer(String message) {
-
-        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        var ipe = new IPEndPoint(IPAddress.Parse(this.serverIP), this.serverPort);
-
-        if (!connectServer(socket, ipe, 5)) {
-            Debug.Log("fail to connect to server");
-            return;
-        }
+    private void getPathFromServer(Socket socket, String message) {
 
         var message_byte = Encoding.UTF8.GetBytes(message);
         socket.Send(message_byte, message_byte.Length, 0);
 
-        var response_byte = getBytesFromServer(24, socket);
+        Debug.Log("test");
+
+        var response_byte = getBytesFromServer(0, socket);
         if (response_byte == null) { return; }
 
-        this.x_calculated = BitConverter.Int64BitsToDouble(BitConverter.ToInt64(response_byte, 0)); 
-        this.y_calculated = BitConverter.Int64BitsToDouble(BitConverter.ToInt64(response_byte, 8)); 
-        this.height_calculated = BitConverter.Int64BitsToDouble(BitConverter.ToInt64(response_byte, 16));
+        Debug.Log(Encoding.UTF8.GetString(response_byte));
 
-        socket.Close();
+        var path = Utils.parsePathResponse(response_byte);
+
+        var lineRenderer = GameObject.Find("/UserContex/Line").GetComponent<LineRenderer>();
+        lineRenderer.positionCount = path.pathLength();
+        lineRenderer.SetPositions(path.getVector3Path());
 
     }
 
 
 
-    private byte[] getBytesFromServer(int size, Socket socket) {
+    private byte[] getBytesFromServer(int size, Socket socket, int timeOut = 3) {
 
-        var oneByte = new byte[1];
-        var byteBuffer = new byte[size];
-        var timeOut = 5;
+        if (size > 0) {    
 
-        for (int i = 0; i < size; i++) {
+            var oneByte = new byte[1];
+            var byteBuffer = new byte[size];
+
+            for (int i = 0; i < size; i++) {
+                var startTime = DateTime.Now;
+                while (socket.Receive(oneByte, 1, 0) == 0) {
+                    var currentTime = DateTime.Now;
+                    if (new TimeSpan(currentTime.Ticks - startTime.Ticks).TotalSeconds > timeOut) { return null; }
+                }
+                byteBuffer[i] = oneByte[0];
+            }
+
+            return byteBuffer;
+
+        } else {
+
+            var byteBuffer = new byte[1024];
+            var result = new List<byte>();
+            var length = 0;
+
             var startTime = DateTime.Now;
-            while (socket.Receive(oneByte, 1, 0) == 0) {
-                var currentTime = DateTime.Now;
-                if (new TimeSpan(currentTime.Ticks - startTime.Ticks).TotalSeconds > timeOut) { return null; }
-            }
-            byteBuffer[i] = oneByte[0];
-        }
-
-        return byteBuffer;
-
-    }
-
-
-    private bool connectServer(Socket socket, IPEndPoint ipe, int timeOut) {
-
-        var startTime = DateTime.Now;
-
-        while (new TimeSpan(DateTime.Now.Ticks - startTime.Ticks).TotalSeconds < timeOut) {
-
-            try {
-                socket.Connect(ipe);
-                return true;
-            } catch (System.Exception) {
-                continue;
+            while (true) {
+                if (new TimeSpan(DateTime.Now.Ticks - startTime.Ticks).TotalSeconds > timeOut) { return null; }
+                length = socket.Receive(byteBuffer);
+                if (length != 0 || result.Count != 0) {
+                    for (int i = 0; i < length; i++) {
+                        result.Add(byteBuffer[i]);
+                    }
+                    break;
+                }
             }
 
+            while (length == byteBuffer.Length) {
+                length = socket.Receive(byteBuffer);
+                for (int i = 0; i < length; i++) {
+                    result.Add(byteBuffer[i]);
+                }
+            }
+
+            return result.ToArray();
+
         }
-
-        return false;
-
-    }
-
-
-
-    private double directDistance(GameObject obj1, GameObject obj2) {
-
-        var position1 = obj1.transform.position;
-        var position2 = obj2.transform.position;
-
-        return Sqrt(Pow(position1.x - position2.x, 2) 
-                    + Pow(position1.y - position2.y, 2) 
-                    + Pow(position1.z - position2.z, 2));
 
     }
 
