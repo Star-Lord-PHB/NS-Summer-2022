@@ -9,6 +9,7 @@ using System.Text;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.IO;
+using UnityEditor;
 
 
 public class Utils : MonoBehaviour
@@ -50,12 +51,16 @@ public class Utils : MonoBehaviour
 
 
 
-    public static bool acknowledge(Socket socket, String expectedMessage = "success", int timeOut = 3) {
+    public static bool acknowledge(Socket socket, String expectedMessage = "success", int timeOut = 5) {
 
+        socket.ReceiveTimeout = timeOut;
         var buffer = new byte[1024];
-        var startTime = DateTime.Now;
-        while (socket.Receive(buffer) == 0) {
-            if (new TimeSpan(DateTime.Now.Ticks - startTime.Ticks).TotalSeconds > timeOut) { return false; }
+
+        try {
+            socket.Receive(buffer, buffer.Length, 0);
+        } catch (SocketException err) {
+            Debug.Log("Acknowledge time out!");
+            return false;
         }
 
         var expectedResponse = Encoding.UTF8.GetBytes(expectedMessage);
@@ -85,8 +90,15 @@ public class Utils : MonoBehaviour
         public float y;
         [DataMember]
         public float height;
+        [DataMember]
+        public int floor;
         public override String ToString() {
-            return "(x=" + this.x + ", y=" + this.y + ", height=" + this.height + ")";
+            return "(x=" + this.x + ", y=" + this.y + ", height=" + this.height + ", floor=" + this.floor + ")";
+        }
+        public override bool Equals(object obj) {
+            if (obj == null || GetType() != obj.GetType()) { return false; }
+            var obj_converted = (Position) obj;
+            return this.x == obj_converted.x && this.y == obj_converted.y && this.height == obj_converted.height;
         }
     }
 
@@ -100,6 +112,17 @@ public class Utils : MonoBehaviour
 
         [DataMember]
         public List<Position> path;
+
+        // override object.Equals
+        public override bool Equals(object obj){     
+            if (obj == null || GetType() != obj.GetType()) { return false; }
+            var obj_converted = (PathResponse) obj;
+            if (this.path.Count != obj_converted.path.Count) { return false; }
+            for (int i = 0; i < this.path.Count; i++) {
+                if (!this.path[i].Equals(obj_converted.path[i])) { return false; }
+            }
+            return this.position.Equals(obj_converted.position);
+        }
 
         public int pathLength() {
             return this.path.Count;
@@ -133,8 +156,27 @@ public class Utils : MonoBehaviour
         var deseralizer = new DataContractJsonSerializer(typeof(PathResponse));
 
         var result = (PathResponse)deseralizer.ReadObject(stream);
+        // var userObject = GameObject.Find("/UserContex/User");
+        // result.position.floorNum = userObject.GetComponent<User>().floorNum_calcualted;
 
         return result;
 
+    }
+
+
+
+    public static bool isReached(byte[] message) {
+        var expectedResponse = Encoding.UTF8.GetBytes("success");
+        if (byteArrEquals(message, expectedResponse, expectedResponse.Length)) {
+            return true;
+        }
+        return false;
+    }
+
+
+
+    public static void quit() {
+        Application.Quit();
+        EditorApplication.isPlaying = false;
     }
 }

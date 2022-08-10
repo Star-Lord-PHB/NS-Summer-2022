@@ -1,4 +1,5 @@
 from copy import copy
+from operator import contains
 
 
 class Node :
@@ -7,6 +8,7 @@ class Node :
         self.neibours: dict[Node, float]
         self.parent: Node = None 
         self.pathCost: float = 0.0
+        self.visitedNodes: set[Node] = set([self])
 
     def __eq__(self, __o: object) -> bool:
         raise NotImplementedError()
@@ -16,6 +18,12 @@ class Node :
     
     def h(self) -> float :
         raise NotImplementedError()
+
+    def addVisited(self, newNode) :
+        self.visitedNodes.add(newNode)
+
+    def hasVisited(self, node) :
+        return node in self.visitedNodes
     
     def traceBack(self) :
         result: list[Node] = []
@@ -23,6 +31,18 @@ class Node :
         while currentNode != None :
             result.insert(0, currentNode)
             currentNode = currentNode.parent
+        return result
+
+    def getNotVisitedNeibours(self) :
+        result: list[Node] = []
+        for node in self.neibours :
+            if (self.hasVisited(node)): continue
+            node_copy = copy(node)
+            node_copy.visitedNodes = set(self.visitedNodes)
+            node_copy.addVisited(node)
+            node_copy.parent = self 
+            node_copy.pathCost += self.neibours[node]
+            result.append(node_copy)
         return result
 
     def getNeibours(self) :
@@ -86,4 +106,4 @@ def aStarSearch(start: Node, dest: Node) -> list[Node] :
         if currentNode == dest :
             return currentNode.traceBack()
         
-        queue.appendAll(currentNode.getNeibours())
+        queue.appendAll(currentNode.getNotVisitedNeibours())

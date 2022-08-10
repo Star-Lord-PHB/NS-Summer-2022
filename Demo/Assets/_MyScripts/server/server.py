@@ -20,6 +20,7 @@ class Mark(Node) :
         self.parent = None
         self.distanceToDest: float = 0.0
         self.pathCost: float = 0.0
+        self.visitedNodes: set[Mark] = set([self])
     
     def __eq__(self, __o: object) -> bool:
         if not isinstance(__o, Mark): return False
@@ -73,10 +74,14 @@ class Position :
     def distanceTo(self, p) -> float :
         return sqrt((self.x - p.x) ** 2 + (self.y - p.y) ** 2 + (self.height - p.height) ** 2).real
 
+    def __eq__(self, __o: object) -> bool:
+        if not isinstance(__o, Position): return False
+        return self.x == __o.x and self.y == __o.y and self.height == __o.height
 
 
 all_sensors: dict[str, dict[str, float]] = {}
 mark_list: dict[str, Mark] = {}
+floor_height: dict[int, float] = {}
 
 
 
@@ -120,16 +125,23 @@ def getStrFromClient(conn: socket.socket, timeOut: int) -> str :
 
 
 
-def parseStrFromClient(message: str) -> list[dict[str, float]] :
+def parseStrFromClient(message: str) -> tuple[list[dict[str, float]], int] :
 
     data: dict[str, float] = json.loads(message)
-    sensor_data_list: list[dict[str, int]] = []
+    sensor_data_list: list[dict[str, float]] = []
 
     for sensor_id in data :
         all_sensors[sensor_id]["distance"] = data[sensor_id]
         sensor_data_list.append(all_sensors[sensor_id])
+    
+    floorNum = sensor_data_list[0]["floor"]
 
-    return sensor_data_list
+    return sensor_data_list, int(floorNum)
+
+
+
+def fixHeight(position: Position, floorNum: int) :
+    position.height = floor_height[floorNum]
 
 
 
@@ -177,9 +189,9 @@ def navigation(start: Position, dest: Position) -> list[Node] :
 
 
 
-def buildNavigationResponse(path: list[Mark], start: Position, dest: Position) -> str :
+def buildNavigationResponse(path: list[Mark], start: Position, floorNum: int, dest: Position) -> str :
 
-    message = "{\"position\": {\"x\": " + str(start.x) + ", \"y\": " + str(start.y) + ", \"height\": " + str(start.height) + "}, \"path\": ["
+    message = "{\"position\": {\"x\": " + str(start.x) + ", \"y\": " + str(start.y) + ", \"height\": " + str(start.height) + ", \"floor\": " + str(floorNum) + "}, \"path\": ["
     message += "{\"x\": " + str(start.x) + ", \"y\": " + str(start.y) + ", \"height\": " + str(start.height) + "}, "
     for i, mark in enumerate(path) :
         message += "{\"x\": " + str(mark.x) + ", \"y\": " + str(mark.y) + ", \"height\": " + str(mark.height) + "}, "
@@ -200,10 +212,30 @@ def serverInit() :
 
     conn, addr = server.accept()
 
+
+    # init the floor height info #####################
     message = ""
     try :
         message = getStrFromClient(conn, 5)
     except TimeoutError :
+        print("floor height info initialization time out!")
+        conn.close()
+        sys.exit(1)
+
+    global floor_height
+    for floor_str, height in json.loads(message).items() :
+        floor_height[int(floor_str)] = height
+
+    print("floor height info: \n", floor_height)
+    conn.send("success".encode("utf-8"))
+
+
+    # init the sensors info ###########################
+    message = ""
+    try :
+        message = getStrFromClient(conn, 5)
+    except TimeoutError :
+        print("sensors info initialization time out!")
         conn.close()
         sys.exit(1)
 
@@ -211,10 +243,10 @@ def serverInit() :
     all_sensors = json.loads(message)
 
     print("sensor data:\n", all_sensors)
-
     conn.send("success".encode("utf-8"))
 
 
+    # init the mark map info ##########################
     try :
         message = getStrFromClient(conn, 5)
     except : 
@@ -227,6 +259,7 @@ def serverInit() :
     conn.send("success".encode("utf-8"))
 
 
+    # init the marks info #############################
     try :
         message = getStrFromClient(conn, 5)
     except :
@@ -282,25 +315,26 @@ def serverMain() :
                 print("time out")
                 break
             
-            sensor_data_list = parseStrFromClient(message)
+            sensor_data_list, floorNum = parseStrFromClient(message)
                 
             equation = distanceCalculationEquationGenenerator(sensor_data_list[:4])
             result = [e for e in fsolve(equation, [0,0,0,0])]
             currentPosition = Position(result[0], result[1], result[2])
+            fixHeight(currentPosition, floorNum)
 
-            if currentPosition.distanceTo(destination) < 0.3 :
+            if currentPosition.distanceTo(destination) < 1.0 :
                 print("Reach destination!")
                 conn.send("success".encode("utf-8"))
                 break 
 
             path = navigation(currentPosition, destination)
 
-            response = buildNavigationResponse(path, currentPosition, destination)
+            response = buildNavigationResponse(path, currentPosition, floorNum, destination)
 
             if not (currentPosition == position_last) :
                 for i in range(4) :
                     print(sensor_data_list[i])
-                print("position: (x={}, y={}, height={})".format(result[0], result[1], result[2]))
+                print("position: (x={}, y={}, height={}, floor={})".format(result[0], result[1], result[2], floorNum))
                 position_last = currentPosition
                 for mark in path :
                     print(mark)

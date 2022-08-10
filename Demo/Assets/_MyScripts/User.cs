@@ -5,6 +5,7 @@ using UnityEngine;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using static System.Math;
 
 
 public class User : MonoBehaviour
@@ -17,7 +18,14 @@ public class User : MonoBehaviour
     [HideInInspector]
     public double height_calculated = 0;
     [HideInInspector]
-    public double floorNum_calcualted = 1;
+    public int floorNum_calcualted = 1;
+
+    [HideInInspector]
+    private Socket socket;
+    [HideInInspector]
+    private Vector3 dest;
+    [HideInInspector]
+    private Utils.PathResponse lastPathResponse = null;
 
     // some predefined properties used only for the demo
     [HideInInspector]
@@ -26,29 +34,45 @@ public class User : MonoBehaviour
     private String serverIP = "127.0.0.1";
     [HideInInspector]
     private int serverPort = 8080;
+    
+    public float dest_x = 0;
+    public float dest_y = 0;
+    public float dest_height = 0;
+    public String dest_mark = "";
+    public int updateFrequency = 1;
     [HideInInspector]
-    private int updateCount = 0;
+    private DateTime lastUpdateTime;
 
 
     // Start is called before the first frame update
     void Start()
     {
-        var socket = Utils.connectToServer(this.serverIP, this.serverPort);
+        this.socket = Utils.connectToServer(this.serverIP, this.serverPort);
         if (socket == null) {
             Debug.Log("Fail to connect to server!");
+            Utils.quit();
             return;
         }
 
-        var testMark = GameObject.Find("/LandMarks/mark_Entry_3").transform.position;
+        if (!this.dest_mark.Equals("")) {
+            var obj = GameObject.Find("/LandMarks/" + dest_mark);
+            if (obj == null) { 
+                Debug.Log("The required destination mark does not exists! Using the coordinate instead!");
+                this.dest = new Vector3(dest_x, dest_height, dest_y); 
+            } else {
+                var p = obj.transform.position;
+                this.dest = new Vector3(p.x, p.y, p.z);
+            }
+        } else {
+            this.dest = new Vector3(dest_x, dest_height, dest_y);
+        }
 
-        if (!sendNavigationRequest(socket, testMark.x, testMark.z, testMark.y)) {
+        if (!sendNavigationRequest(socket, this.dest.x, this.dest.z, this.dest.y)) {
             Debug.Log("Fail to send navigation request to server!");
-            return;
+            Utils.quit();
         }
 
-        getPathFromServer(socket, createJsonMessage(filterCurrentFloor(linkSensors())));
-
-        socket.Close();
+        this.lastUpdateTime = DateTime.Now;
     }
 
 
@@ -56,22 +80,33 @@ public class User : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        // var socket = Utils.connectToServer(this.serverIP, this.serverPort);
-        // if (socket == null) {
-        //     Debug.Log("Fail to connect to server!");
-        //     return;
-        // }
+        if (DateTime.Now.Ticks - this.lastUpdateTime.Ticks < (1.0 / this.updateFrequency) * 10000000L) { return; }
 
-        // var testMark = GameObject.Find("/LandMarks/mark_Kitchen_3").transform.position;
+        Utils.PathResponse path = null;
+        try {
+            path = getPathFromServer(this.socket, createJsonMessage(filterCurrentFloor(linkSensors())));
+        } catch (Exception err) {
+            Debug.Log(err);
+            this.socket.Close();
+            Utils.quit();
+        }
+        if (path == null) {
+            Debug.Log("Reached!");
+            this.socket.Close();
+            Utils.quit();
+            return;
+        }
 
-        // if (!sendNavigationRequest(socket, testMark.x, testMark.z, testMark.y)) {
-        //     Debug.Log("Fail to send navigation request to server!");
-        //     return;
-        // }
+        if (!path.Equals(this.lastPathResponse)) {
+            var actual_position = gameObject.transform.position;
+            Debug.Log("calculated position: " + path.position + " -- actual: (x=" + actual_position.x + ", y=" + actual_position.z + ", height=" + actual_position.y + ")");
+            Debug.Log(path);
+            this.lastPathResponse = path;
+        }
 
-        // getPathFromServer(socket, createJsonMessage(filterCurrentFloor(linkSensors())));
+        drawPath(path);
 
-        // socket.Close();
+        this.lastUpdateTime = DateTime.Now;
     }
 
 
@@ -112,16 +147,27 @@ public class User : MonoBehaviour
      */
     private GameObject[] filterCurrentFloor(GameObject[] sensors) {
 
-        var counter = new Dictionary<int, int>();
+        var counter = new Dictionary<int, double>();
+        var sensorList = new List<GameObject>(sensors);
         var result = new List<GameObject>();
 
-        foreach (GameObject sensor in sensors) {
+        sensorList.Sort(compareByDistanceToUser);
+        // var testMessage = "";
+        // foreach (var sensor in sensorList) {
+        //     testMessage += (sensor.name + "   ");
+        // }
+        // Debug.Log(testMessage);
+
+        var i = 0;
+        foreach (GameObject sensor in sensorList) {
+            if (i > 5) {break;}
             counter.TryAdd(sensor.GetComponent<Sensor>().floorNum, 0);
-            counter[sensor.GetComponent<Sensor>().floorNum] += 1;
+            counter[sensor.GetComponent<Sensor>().floorNum] += 1 / Utils.directDistance(gameObject, sensor);
+            i++;
         }
 
         var floorNum = 1;
-        var count = 0;
+        var count = 0.0;
         foreach (var pair in counter) {
             if (pair.Value > count) {
                 count = pair.Value;
@@ -149,7 +195,15 @@ public class User : MonoBehaviour
 
 
 
+    private int compareByDistanceToUser(GameObject obj1, GameObject obj2) {
+        return (int) Ceiling(Utils.directDistance(gameObject, obj1) - Utils.directDistance(gameObject, obj2));
+    }
+
+
+
     private String createJsonMessage(GameObject[] sensors) {
+
+        // example: {"Sensor_LivingRoom_1": 5.1, "Sensor_LivingRoom_2": 3.4, ...}
 
         var message = "{";
 
@@ -167,19 +221,25 @@ public class User : MonoBehaviour
 
 
 
-    private void getPathFromServer(Socket socket, String message) {
+    private Utils.PathResponse getPathFromServer(Socket socket, String message) {
 
         var message_byte = Encoding.UTF8.GetBytes(message);
         socket.Send(message_byte, message_byte.Length, 0);
 
-        Debug.Log("test");
-
         var response_byte = getBytesFromServer(0, socket);
-        if (response_byte == null) { return; }
+        if (response_byte == null) { throw new Exception("fail to get path from server"); }
 
-        Debug.Log(Encoding.UTF8.GetString(response_byte));
+        if (Utils.isReached(response_byte)) {
+            return null;
+        }
 
-        var path = Utils.parsePathResponse(response_byte);
+        return Utils.parsePathResponse(response_byte);
+
+    }
+
+
+
+    private void drawPath(Utils.PathResponse path) {
 
         var lineRenderer = GameObject.Find("/UserContex/Line").GetComponent<LineRenderer>();
         lineRenderer.positionCount = path.pathLength();
@@ -191,6 +251,8 @@ public class User : MonoBehaviour
 
     private byte[] getBytesFromServer(int size, Socket socket, int timeOut = 3) {
 
+        socket.ReceiveTimeout = timeOut * 1000;
+
         if (size > 0) {    
 
             var oneByte = new byte[1];
@@ -198,9 +260,11 @@ public class User : MonoBehaviour
 
             for (int i = 0; i < size; i++) {
                 var startTime = DateTime.Now;
-                while (socket.Receive(oneByte, 1, 0) == 0) {
-                    var currentTime = DateTime.Now;
-                    if (new TimeSpan(currentTime.Ticks - startTime.Ticks).TotalSeconds > timeOut) { return null; }
+                try {
+                    socket.Receive(oneByte, 1, 0);
+                } catch (SocketException err) {
+                    Debug.Log("Receive time out!");
+                    return null;
                 }
                 byteBuffer[i] = oneByte[0];
             }
@@ -213,39 +277,48 @@ public class User : MonoBehaviour
             var result = new List<byte>();
             var length = 0;
 
-            var startTime = DateTime.Now;
             while (true) {
-                if (new TimeSpan(DateTime.Now.Ticks - startTime.Ticks).TotalSeconds > timeOut) { return null; }
-                length = socket.Receive(byteBuffer);
-                if (length != 0 || result.Count != 0) {
-                    for (int i = 0; i < length; i++) {
-                        result.Add(byteBuffer[i]);
+
+                try { length = socket.Receive(byteBuffer, byteBuffer.Length, 0); } 
+                catch (SocketException err) {
+                    if (result.Count == 0) {
+                        Debug.Log("Receive time out!");
+                        return null;
                     }
                     break;
                 }
-            }
 
-            while (length == byteBuffer.Length) {
-                length = socket.Receive(byteBuffer);
                 for (int i = 0; i < length; i++) {
                     result.Add(byteBuffer[i]);
                 }
+
+                if (length < byteBuffer.Length) {
+                    break;
+                }
+
             }
+
+            // while (true) {
+            //     if (new TimeSpan(DateTime.Now.Ticks - startTime.Ticks).TotalSeconds > timeOut) { return null; }
+            //     length = socket.Receive(byteBuffer);
+            //     if (length != 0 || result.Count != 0) {
+            //         for (int i = 0; i < length; i++) {
+            //             result.Add(byteBuffer[i]);
+            //         }
+            //         break;
+            //     }
+            // }
+
+            // while (length == byteBuffer.Length) {
+            //     length = socket.Receive(byteBuffer);
+            //     for (int i = 0; i < length; i++) {
+            //         result.Add(byteBuffer[i]);
+            //     }
+            // }
 
             return result.ToArray();
 
         }
-
-    }
-
-
-
-    private void makeCompare() {
-
-        var actialPosition = gameObject.transform.position;
-
-        Debug.Log("calculated position: (x=" + this.x_calculated + ", y=" + this.y_calculated + ", height=" + this.height_calculated + ", floor=" + this.floorNum_calcualted + ")");
-        Debug.Log("actual position: (x=" + actialPosition.x + ", y=" + actialPosition.z + ", height=" + actialPosition.y + ", floor=<check it yourselves!>" + ")");
 
     }
 
