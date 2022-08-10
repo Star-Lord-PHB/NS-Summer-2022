@@ -8,9 +8,13 @@ using System.Net.Sockets;
 using System.Linq;
 
 
+/**
+ * The script that will run at the very begining to init all the necessary info on the server 
+ * In reality the server will hold all those info from the blue print of the building
+ * However in this demo, data are stored in unity locally, so we have to send them to the server first
+ */
 public class SceneInitializer : MonoBehaviour
 {
-
     [HideInInspector]
     private String serverIP = "127.0.0.1";
     [HideInInspector]
@@ -20,14 +24,14 @@ public class SceneInitializer : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        var sensorList = GameObject.FindGameObjectsWithTag("sensor");
-
+        // connect to the server
         var socket = Utils.connectToServer(this.serverIP, this.serverPort, 1);
         if (socket == null) {
             Debug.Log("fail to connect to server for initialization, skipping this part...");
             return;
         }
 
+        // init the information of height of each floor 
         if (!initFloorHeight(socket)) {
             Debug.Log("fail to init the floor height info of the building in the server");
             socket.Close();
@@ -35,6 +39,7 @@ public class SceneInitializer : MonoBehaviour
             return;
         }
 
+        // init all the infomation of the sensors 
         if (!initSensors(socket)) {
             Debug.Log("fail to init sensor data in the server!");
             socket.Close();
@@ -42,6 +47,7 @@ public class SceneInitializer : MonoBehaviour
             return;
         }
 
+        // init all map of all the land marks 
         if (!initLandMarkMap(socket)) {
             Debug.Log("fail to init land mark map in the server!");
             socket.Close();
@@ -49,6 +55,7 @@ public class SceneInitializer : MonoBehaviour
             return;
         }
 
+        // init the information of all the land marks
         if (!initLandMarkInfo(socket)) {
             Debug.Log("fail to init the land mark info in the server!");
             socket.Close();
@@ -70,6 +77,8 @@ public class SceneInitializer : MonoBehaviour
 
 
     private bool initFloorHeight(Socket socket) {
+
+        // example: {"1": 1.0, "2": 5.2, ...}
 
         var floorHeightMessage = "{\"1\": " 
                                 + GameObject.Find("/LandMarks/mark_Stair_1").transform.position.y 

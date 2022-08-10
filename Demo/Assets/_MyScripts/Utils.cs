@@ -12,8 +12,14 @@ using System.IO;
 using UnityEditor;
 
 
+/**
+ * Some utils functions 
+ */
 public class Utils : MonoBehaviour
 {
+    /**
+     * get the straight line distance between two GameObject 
+     */
     public static double directDistance(GameObject obj1, GameObject obj2) {
 
         var position1 = obj1.transform.position;
@@ -27,6 +33,11 @@ public class Utils : MonoBehaviour
 
 
 
+    /**
+     * connect to server base on provided ip and port number 
+     * return the connected socket 
+     * return null if fail 
+     */
     public static Socket connectToServer(String ip, int port, int timeOut = 3) {
 
         var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -51,9 +62,76 @@ public class Utils : MonoBehaviour
 
 
 
+    /**
+     * receive byte array of certain length from the server
+     * if the provided size is smaller than 0, get as much as it can
+     * otherwise, get specified num of bytes 
+     */
+    public static byte[] getBytesFromServer(int size, Socket socket, int timeOut = 3) {
+
+        socket.ReceiveTimeout = timeOut * 1000;
+
+        if (size > 0) {    
+
+            var oneByte = new byte[1];
+            var byteBuffer = new byte[size];
+
+            for (int i = 0; i < size; i++) {
+                var startTime = DateTime.Now;
+                try {
+                    socket.Receive(oneByte, 1, 0);
+                } catch (SocketException err) {
+                    Debug.Log("Receive time out!");
+                    return null;
+                }
+                byteBuffer[i] = oneByte[0];
+            }
+
+            return byteBuffer;
+
+        } else {
+
+            var byteBuffer = new byte[1024];
+            var result = new List<byte>();
+            var length = 0;
+
+            while (true) {
+
+                try { length = socket.Receive(byteBuffer, byteBuffer.Length, 0); } 
+                catch (SocketException err) {
+                    if (result.Count == 0) {
+                        Debug.Log("Receive time out!");
+                        return null;
+                    }
+                    break;
+                }
+
+                for (int i = 0; i < length; i++) {
+                    result.Add(byteBuffer[i]);
+                }
+
+                if (length < byteBuffer.Length) {
+                    break;
+                }
+
+            }
+
+            return result.ToArray();
+
+        }
+
+    }
+
+
+
+    /**
+     * try to get and check the response from the server that is for acknowledgement 
+     * the acknowledgement message is "success" by default 
+     * return false if the message does not match or fail to get the message for a while 
+     */
     public static bool acknowledge(Socket socket, String expectedMessage = "success", int timeOut = 5) {
 
-        socket.ReceiveTimeout = timeOut;
+        socket.ReceiveTimeout = timeOut * 1000;
         var buffer = new byte[1024];
 
         try {
@@ -73,6 +151,9 @@ public class Utils : MonoBehaviour
 
 
 
+    /**
+     * compare the first n bytes of two byte array 
+     */
     public static bool byteArrEquals(byte[] arr1, byte[] arr2, int length) {
         for (int i = 0; i < length; i++) {
             if (arr1[i] != arr2[i]) { return false; }
@@ -82,6 +163,11 @@ public class Utils : MonoBehaviour
 
 
 
+    /**
+     * Class for recording one position 
+     * with informative `ToString()` method and `Equals()` method implemented 
+     * it will be build from the json message from the server
+     */
     [DataContract]
     public class Position {
         [DataMember]
@@ -104,6 +190,10 @@ public class Utils : MonoBehaviour
 
 
 
+    /**
+     * Class for storing the position & path response from the server 
+     * it will be built from the json message from the server 
+     */
     [DataContract]
     public class PathResponse {
 
@@ -150,14 +240,16 @@ public class Utils : MonoBehaviour
 
 
 
+    /**
+     * parse the json message of position & path from the server 
+     * and build a PathResponse class 
+     */
     public static PathResponse parsePathResponse(byte[] message) {
 
         var stream = new MemoryStream(message);
         var deseralizer = new DataContractJsonSerializer(typeof(PathResponse));
 
         var result = (PathResponse)deseralizer.ReadObject(stream);
-        // var userObject = GameObject.Find("/UserContex/User");
-        // result.position.floorNum = userObject.GetComponent<User>().floorNum_calcualted;
 
         return result;
 
@@ -165,6 +257,10 @@ public class Utils : MonoBehaviour
 
 
 
+    /**
+     * Check whether the response from the server is "success" when trying to fetch the position & path
+     * if it is, we have reached the destination 
+     */
     public static bool isReached(byte[] message) {
         var expectedResponse = Encoding.UTF8.GetBytes("success");
         if (byteArrEquals(message, expectedResponse, expectedResponse.Length)) {
@@ -175,6 +271,9 @@ public class Utils : MonoBehaviour
 
 
 
+    /**
+     * quit whole application 
+     */
     public static void quit() {
         Application.Quit();
         EditorApplication.isPlaying = false;

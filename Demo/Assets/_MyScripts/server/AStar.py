@@ -1,7 +1,10 @@
 from copy import copy
-from operator import contains
+from datetime import datetime
 
 
+# The A* Algorithms for calculating the path 
+
+# The abstract Node class, require an implementation class
 class Node :
     
     def __init__(self) -> None:
@@ -16,15 +19,19 @@ class Node :
     def __hash__(self) -> int:
         raise NotImplementedError()
     
+    # The heuristic function for estimating the total path cost 
     def h(self) -> float :
         raise NotImplementedError()
 
+    # record the visited node to avoid loop
     def addVisited(self, newNode) :
         self.visitedNodes.add(newNode)
 
+    # check whether the new node has been visited to avoid loop 
     def hasVisited(self, node) :
         return node in self.visitedNodes
     
+    # get the path as a list of nodes 
     def traceBack(self) :
         result: list[Node] = []
         currentNode = self 
@@ -33,6 +40,7 @@ class Node :
             currentNode = currentNode.parent
         return result
 
+    # get the neibours nodes that are not visited 
     def getNotVisitedNeibours(self) :
         result: list[Node] = []
         for node in self.neibours :
@@ -56,7 +64,7 @@ class Node :
             
 
 
-
+# A special Queue that will sort the nodes with their heuristic function 
 class PriorityQueue :
 
     def __init__(self) -> None:

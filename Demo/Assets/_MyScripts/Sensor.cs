@@ -3,6 +3,9 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+/**
+ * Class for storing extra info of each sensors 
+ */
 public class Sensor : MonoBehaviour
 {
     public int floorNum = 1;

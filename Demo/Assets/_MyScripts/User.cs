@@ -11,6 +11,9 @@ using static System.Math;
 public class User : MonoBehaviour
 {
 
+    /**
+     * fields that store the calculation result from the server
+     */
     [HideInInspector]
     public double x_calculated = 0;
     [HideInInspector]
@@ -20,14 +23,27 @@ public class User : MonoBehaviour
     [HideInInspector]
     public int floorNum_calcualted = 1;
 
+    /**
+     * Some global fields for the User class
+     * for holding data between each update
+     */
+    // hold the connection to the server during one navigation process 
     [HideInInspector]
     private Socket socket;
+    // hold the destination during one navigation process       
     [HideInInspector]
-    private Vector3 dest;
+    private Vector3 dest;       
+    // hold the last path received from server so that the console log won't update if the User does not move 
     [HideInInspector]
-    private Utils.PathResponse lastPathResponse = null;
+    private Utils.PathResponse lastPathResponse = null;    
+    // hold the last time we fetch path from server to control the update frequency 
+    [HideInInspector]
+    private DateTime lastUpdateTime;
 
-    // some predefined properties used only for the demo
+    /**
+     * Some predefined setting for the Demo 
+     */
+    // the maximum distance for a sensor to be linked to the User
     [HideInInspector]
     private int max_sensor_distance = 15;
     [HideInInspector]
@@ -35,18 +51,26 @@ public class User : MonoBehaviour
     [HideInInspector]
     private int serverPort = 8080;
     
+    /**
+     * Setting exposed to user 
+     */
+    // the x coordinate of the destination
     public float dest_x = 0;
+    // the y coordinate of the destination
     public float dest_y = 0;
+    // the height coordinate of the destination
     public float dest_height = 0;
+    // set the destination with the name of some predefined marks
+    // if this field is set, it will ignore the coordinates before
     public String dest_mark = "";
+    // the frequency for updating the path from server (times per second)
     public int updateFrequency = 1;
-    [HideInInspector]
-    private DateTime lastUpdateTime;
 
 
     // Start is called before the first frame update
     void Start()
     {
+        // connect to the server
         this.socket = Utils.connectToServer(this.serverIP, this.serverPort);
         if (socket == null) {
             Debug.Log("Fail to connect to server!");
@@ -54,6 +78,7 @@ public class User : MonoBehaviour
             return;
         }
 
+        // Assemble the destination info 
         if (!this.dest_mark.Equals("")) {
             var obj = GameObject.Find("/LandMarks/" + dest_mark);
             if (obj == null) { 
@@ -67,9 +92,11 @@ public class User : MonoBehaviour
             this.dest = new Vector3(dest_x, dest_height, dest_y);
         }
 
+        // send the navigation request and the destination to the server 
         if (!sendNavigationRequest(socket, this.dest.x, this.dest.z, this.dest.y)) {
             Debug.Log("Fail to send navigation request to server!");
             Utils.quit();
+            return;
         }
 
         this.lastUpdateTime = DateTime.Now;
@@ -80,8 +107,10 @@ public class User : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        // control the update frequency 
         if (DateTime.Now.Ticks - this.lastUpdateTime.Ticks < (1.0 / this.updateFrequency) * 10000000L) { return; }
 
+        // fetch path from the server
         Utils.PathResponse path = null;
         try {
             path = getPathFromServer(this.socket, createJsonMessage(filterCurrentFloor(linkSensors())));
@@ -90,6 +119,7 @@ public class User : MonoBehaviour
             this.socket.Close();
             Utils.quit();
         }
+        // if the response path is null, it means that the User has reached the distination 
         if (path == null) {
             Debug.Log("Reached!");
             this.socket.Close();
@@ -97,6 +127,8 @@ public class User : MonoBehaviour
             return;
         }
 
+        // if the User does not move since last time the path is update, do nothing
+        // otherwise, update the new calculated path & position info to the console 
         if (!path.Equals(this.lastPathResponse)) {
             var actual_position = gameObject.transform.position;
             Debug.Log("calculated position: " + path.position + " -- actual: (x=" + actual_position.x + ", y=" + actual_position.z + ", height=" + actual_position.y + ")");
@@ -104,6 +136,7 @@ public class User : MonoBehaviour
             this.lastPathResponse = path;
         }
 
+        // draw the path as a white line in the unity scene
         drawPath(path);
 
         this.lastUpdateTime = DateTime.Now;
@@ -111,6 +144,11 @@ public class User : MonoBehaviour
 
 
 
+    /**
+     * Send the navigation request and destination info to the server
+     * Once the server get this information, it will require distances info to different sensors to calculate the path
+     * That means this function only need to be called once at the beginning of the navigation process 
+     */
     private bool sendNavigationRequest(Socket socket, double x, double y, double height) {
         var message_byte = Encoding.UTF8.GetBytes("{\"x\": " + x + ", \"y\": " + y + ", \"height\": " + height + "}");
         socket.Send(message_byte, message_byte.Length, 0);
@@ -119,6 +157,9 @@ public class User : MonoBehaviour
 
 
 
+    /**
+     * get the surrounding sensors within the predefined maximum distance 
+     */
     private GameObject[] linkSensors() {
 
         var result = new List<GameObject>();
@@ -130,7 +171,6 @@ public class User : MonoBehaviour
 
             var sensor = sensorList[i];
             if (Utils.directDistance(gameObject, sensor) <= this.max_sensor_distance) {
-                // Debug.Log("sensor " + sensor.name + " --> (" + Utils.directDistance(gameObject, sensor) + ", " + sensor.GetComponent<Sensor>().height + ", " + sensor.GetComponent<Sensor>().floorNum + ")");
                 result.Add(sensor);
                 count++;
             }
@@ -143,7 +183,8 @@ public class User : MonoBehaviour
 
 
     /**
-     * 
+     * estimate the floor num of the User and filter out all the sensors of that floor
+     * (we only calculate the position using the sensors of the same floor)
      */
     private GameObject[] filterCurrentFloor(GameObject[] sensors) {
 
@@ -183,27 +224,28 @@ public class User : MonoBehaviour
             }
         }
 
-        // if (updateCount == 0) {
-        //     foreach (GameObject sensor in result) {
-        //         Debug.Log(sensor.name + " --> " + Utils.directDistance(gameObject, sensor));
-        //     }
-        // }
-
         return result.ToArray();
 
     }
 
 
 
+    /**
+     * A comparator for sorting the sensors with distance to User
+     * mainly used in the `filterCurrentFloor` function 
+     */
     private int compareByDistanceToUser(GameObject obj1, GameObject obj2) {
         return (int) Ceiling(Utils.directDistance(gameObject, obj1) - Utils.directDistance(gameObject, obj2));
     }
 
 
 
+    /**
+     * build the json message that will be send to the server to calculate the position and the path
+     * the format is {"SensorID": distanceToUser, ...}
+     * example: {"Sensor_LivingRoom_1": 5.1, "Sensor_LivingRoom_2": 3.4, ...}
+     */
     private String createJsonMessage(GameObject[] sensors) {
-
-        // example: {"Sensor_LivingRoom_1": 5.1, "Sensor_LivingRoom_2": 3.4, ...}
 
         var message = "{";
 
@@ -221,12 +263,17 @@ public class User : MonoBehaviour
 
 
 
+    /**
+     * send the built json message to the server and get the position & path response 
+     * the response from the server may be the position & path or a message "success"
+     * if the response is "success", that means we have reached the destination 
+     */
     private Utils.PathResponse getPathFromServer(Socket socket, String message) {
 
         var message_byte = Encoding.UTF8.GetBytes(message);
         socket.Send(message_byte, message_byte.Length, 0);
 
-        var response_byte = getBytesFromServer(0, socket);
+        var response_byte = Utils.getBytesFromServer(0, socket);
         if (response_byte == null) { throw new Exception("fail to get path from server"); }
 
         if (Utils.isReached(response_byte)) {
@@ -239,86 +286,14 @@ public class User : MonoBehaviour
 
 
 
+    /**
+     * draw the path on the unity scene as a white line base on the path response from the server 
+     */
     private void drawPath(Utils.PathResponse path) {
 
         var lineRenderer = GameObject.Find("/UserContex/Line").GetComponent<LineRenderer>();
         lineRenderer.positionCount = path.pathLength();
         lineRenderer.SetPositions(path.getVector3Path());
-
-    }
-
-
-
-    private byte[] getBytesFromServer(int size, Socket socket, int timeOut = 3) {
-
-        socket.ReceiveTimeout = timeOut * 1000;
-
-        if (size > 0) {    
-
-            var oneByte = new byte[1];
-            var byteBuffer = new byte[size];
-
-            for (int i = 0; i < size; i++) {
-                var startTime = DateTime.Now;
-                try {
-                    socket.Receive(oneByte, 1, 0);
-                } catch (SocketException err) {
-                    Debug.Log("Receive time out!");
-                    return null;
-                }
-                byteBuffer[i] = oneByte[0];
-            }
-
-            return byteBuffer;
-
-        } else {
-
-            var byteBuffer = new byte[1024];
-            var result = new List<byte>();
-            var length = 0;
-
-            while (true) {
-
-                try { length = socket.Receive(byteBuffer, byteBuffer.Length, 0); } 
-                catch (SocketException err) {
-                    if (result.Count == 0) {
-                        Debug.Log("Receive time out!");
-                        return null;
-                    }
-                    break;
-                }
-
-                for (int i = 0; i < length; i++) {
-                    result.Add(byteBuffer[i]);
-                }
-
-                if (length < byteBuffer.Length) {
-                    break;
-                }
-
-            }
-
-            // while (true) {
-            //     if (new TimeSpan(DateTime.Now.Ticks - startTime.Ticks).TotalSeconds > timeOut) { return null; }
-            //     length = socket.Receive(byteBuffer);
-            //     if (length != 0 || result.Count != 0) {
-            //         for (int i = 0; i < length; i++) {
-            //             result.Add(byteBuffer[i]);
-            //         }
-            //         break;
-            //     }
-            // }
-
-            // while (length == byteBuffer.Length) {
-            //     length = socket.Receive(byteBuffer);
-            //     for (int i = 0; i < length; i++) {
-            //         result.Add(byteBuffer[i]);
-            //     }
-            // }
-
-            return result.ToArray();
-
-        }
 
     }
 
