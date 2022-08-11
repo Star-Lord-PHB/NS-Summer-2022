@@ -24,7 +24,7 @@
 ## How to use
 The whole [Demo](./Demo/) folder is a complete Unity project. So please directly open this folder with Unity and you should be able to see a house in the scene. 
 
-Then go to the [server](./Demo/Assets/_MyScripts/server/) folder and type in `python server.py` or `python3 server.py` to start the server locally. Make sure `Scipy` module is install in your python environment. If you see a message "waiting for data to init the sensors", the server is started successfully and waiting for client to connect. ![serverInfo](./images/serverInfo.png)
+Then go to the [server](./Demo/Assets/_MyScripts/server/) folder and type in `python server.py` or `python3 server.py` to start the server locally. Make sure `Scipy` module is installed in your python environment. If you see a message "waiting for data to init the sensors", the server is started successfully and waiting for client to connect. ![serverInfo](./images/serverInfo.png)
 
 Now get back to the Unity project window and click on the `/UserContex/User` object in the Hierachy window. Then in the inspector there should be a component look like this: ![UserSetting](./images/UserSetting.png)
 This is the place to set the destination of the user. There are 2 ways to do that: 
