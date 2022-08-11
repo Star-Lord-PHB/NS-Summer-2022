@@ -10,6 +10,7 @@
 **Gawain (Xuyuan Liu)**
 * Provide the building model for the Demo 
 * Solution Implementation part of the report 
+* Potential Improvement & Implementation of Technology analysis of Final Paper
 
 **Elaine (Mingyue Ding)**
 * add here ...
