@@ -13,7 +13,7 @@
 * Potential Improvement & Implementation of Technology analysis of Final Paper
 
 **Elaine (Mingyue Ding)**
-* add here ...
+* Introduction & related work parts of the final paper
 
 
 
