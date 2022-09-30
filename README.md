@@ -7,6 +7,7 @@
 
 **Peter (Xuhang Cao)**
 * Researched performances of UWB compared with other protocols (WIFI, Bluetooth) in sensoring, range, frequency and so on.
+* Analysis on open world application
 
 **Gawain (Xuyuan Liu)**
 * Provide the building model for the Demo 
